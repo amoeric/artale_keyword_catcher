@@ -415,6 +415,77 @@ async def test_fetch(ctx):
     
     await ctx.send(embed=embed)
 
+@bot.command(name='test_notify')
+async def test_notify(ctx):
+    """測試關鍵字匹配和通知功能"""
+    await ctx.send("🧪 正在測試關鍵字匹配和通知功能...")
+    
+    user_id = ctx.author.id
+    if user_id not in monitored_keywords or not monitored_keywords[user_id]:
+        embed = discord.Embed(
+            title="⚠️ 沒有關鍵字",
+            description="您還沒有設定任何關鍵字，請先使用 `!add_keyword` 添加關鍵字",
+            color=discord.Color.orange()
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # 獲取訊息並檢查關鍵字
+    messages = keyword_catcher.fetch_messages()
+    
+    if not messages:
+        # 如果沒有真實訊息，創建測試訊息
+        test_keywords = monitored_keywords[user_id]
+        test_message = {
+            'text': f"測試訊息包含關鍵字: {test_keywords[0]} - 這是一條測試通知",
+            'full_text': f"[測試] TestUser: 測試訊息包含關鍵字: {test_keywords[0]} - 這是一條測試通知",
+            'channel': "[測試]",
+            'username': "TestUser",
+            'timestamp': datetime.now().isoformat()
+        }
+        messages = [test_message]
+    
+    notification_sent = False
+    for message in messages:
+        message_text = message['text']
+        matched_keywords = keyword_catcher.check_keywords(message_text, monitored_keywords[user_id])
+        
+        if matched_keywords:
+            await send_notification(user_id, message, matched_keywords)
+            notification_sent = True
+            
+            embed = discord.Embed(
+                title="✅ 測試成功",
+                description=f"找到匹配關鍵字: {', '.join(matched_keywords)}\n已發送通知！",
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="測試訊息",
+                value=message_text[:200] + "..." if len(message_text) > 200 else message_text,
+                inline=False
+            )
+            await ctx.send(embed=embed)
+            break
+    
+    if not notification_sent:
+        embed = discord.Embed(
+            title="📋 測試結果",
+            description=f"檢查了 {len(messages)} 條訊息，沒有找到匹配的關鍵字",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="您的關鍵字",
+            value=", ".join(monitored_keywords[user_id]),
+            inline=False
+        )
+        if messages:
+            embed.add_field(
+                name="最新訊息示例",
+                value=messages[0]['text'][:200] + "..." if len(messages[0]['text']) > 200 else messages[0]['text'],
+                inline=False
+            )
+        await ctx.send(embed=embed)
+
 @bot.command(name='toggle_test_mode')
 async def toggle_test_mode(ctx):
     keyword_catcher.test_mode = not keyword_catcher.test_mode
@@ -455,6 +526,7 @@ async def help_command(ctx):
     embed.add_field(
         name="🔧 測試功能",
         value="`@機器人 !test_fetch` - 測試網站抓取功能\n"
+              "`@機器人 !test_notify` - 測試關鍵字匹配和通知\n"
               "`@機器人 !toggle_test_mode` - 切換測試模式",
         inline=False
     )
