@@ -12,6 +12,8 @@ import logging
 from dotenv import load_dotenv
 import hashlib
 import threading
+import websockets
+import ssl
 
 # 載入環境變數
 load_dotenv()
@@ -38,63 +40,116 @@ bot_status = {"status": "停止", "last_update": None, "users_count": 0, "keywor
 class KeywordCatcher:
     def __init__(self):
         self.url = "https://pal.tw/"
+        self.ws_url = "wss://api.pal.tw"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         self.test_mode = True
         self.message_counter = 0
+        self.latest_messages = []
+        self.ws_connected = False
+    
+    async def connect_websocket(self):
+        """連接到 WebSocket 並監聽訊息"""
+        try:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            async with websockets.connect(self.ws_url, ssl=ssl_context) as websocket:
+                self.ws_connected = True
+                logger.info("WebSocket 連接成功！")
+                
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        if isinstance(data, list):
+                            for msg in data:
+                                self.process_message(msg)
+                        else:
+                            self.process_message(data)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"JSON 解析錯誤: {e}")
+                    except Exception as e:
+                        logger.error(f"處理 WebSocket 訊息時發生錯誤: {e}")
+                        
+        except Exception as e:
+            logger.error(f"WebSocket 連接錯誤: {e}")
+            self.ws_connected = False
+    
+    def process_message(self, msg):
+        """處理單條訊息"""
+        try:
+            if not isinstance(msg, dict):
+                return
+                
+            channel = msg.get('channel', '')
+            username = msg.get('username', '')
+            text = msg.get('text', '')
+            timestamp = msg.get('timestamp', datetime.now().isoformat())
+            
+            if text:
+                channel_display = f"[{str(channel).zfill(4)}]" if channel else ""
+                full_message = f"{channel_display} {username}: {text}"
+                
+                message_data = {
+                    'text': text,
+                    'full_text': full_message,
+                    'channel': channel_display,
+                    'username': username,
+                    'timestamp': timestamp
+                }
+                
+                # 保留最新的 100 條訊息
+                self.latest_messages.append(message_data)
+                if len(self.latest_messages) > 100:
+                    self.latest_messages.pop(0)
+                
+                logger.debug(f"收到訊息: {username}: {text}")
+                
+        except Exception as e:
+            logger.error(f"處理訊息時發生錯誤: {e}")
     
     def fetch_messages(self):
+        """獲取最新訊息（用於定時檢查）"""
         global last_warning_time
         
-        try:
-            response = requests.get(self.url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            messages = []
-            
-            chat_box = soup.find('div', {'id': 'chatBox'})
-            if chat_box:
-                for element in chat_box.find_all(['div', 'p', 'span']):
-                    text = element.get_text(strip=True)
-                    if text and len(text) > 10:
-                        messages.append({
-                            'text': text,
-                            'timestamp': datetime.now().isoformat()
-                        })
-            
-            if not messages and self.test_mode:
-                current_time = datetime.now()
-                
-                if (last_warning_time is None or 
-                    current_time - last_warning_time > timedelta(minutes=5)):
-                    logger.warning("未找到聊天訊息，可能需要 WebSocket 連接或 API 訪問")
-                    last_warning_time = current_time
-                
-                self.message_counter += 1
-                if self.message_counter % 10 == 0:
-                    test_messages = [
-                        "測試訊息: 有人在賣楓葉嗎？",
-                        "測試訊息: 尋找交易夥伴",
-                        "測試訊息: 公會招募中，歡迎新手",
-                        "測試訊息: 組隊打王，缺治療",
-                        "測試訊息: 賣裝備，價格優惠"
-                    ]
-                    
-                    import random
-                    test_msg = random.choice(test_messages)
-                    messages.append({
-                        'text': f"[測試模式] {test_msg}",
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    logger.info(f"生成測試訊息: {test_msg}")
-            
+        # 如果 WebSocket 連接正常，返回最新訊息
+        if self.ws_connected and self.latest_messages:
+            messages = self.latest_messages.copy()
+            self.latest_messages.clear()  # 清空已處理的訊息
             return messages
         
-        except Exception as e:
-            logger.error(f"抓取訊息時發生錯誤: {e}")
-            return []
+        # 如果沒有 WebSocket 連接，使用測試模式
+        current_time = datetime.now()
+        
+        if (last_warning_time is None or 
+            current_time - last_warning_time > timedelta(minutes=5)):
+            logger.warning("WebSocket 未連接，使用測試模式")
+            last_warning_time = current_time
+        
+        # 測試模式：每10次抓取生成一個測試訊息
+        self.message_counter += 1
+        if self.message_counter % 10 == 0:
+            test_messages = [
+                "3362頻6洞收拳套攻擊10% 1:5雪/收拉圖斯腰帶談價",
+                "收楓葉 1:100 大量收購",
+                "賣+7武器 屬性優秀 價格面議",
+                "組隊打扎昆 缺坦克和治療",
+                "公會招募 歡迎新手加入"
+            ]
+            
+            import random
+            test_msg = random.choice(test_messages)
+            return [{
+                'text': test_msg,
+                'full_text': f"[測試] TestUser#1234: {test_msg}",
+                'channel': "[測試]",
+                'username': "TestUser#1234",
+                'timestamp': datetime.now().isoformat()
+            }]
+        
+        return []
     
     def check_keywords(self, message_text, keywords):
         message_lower = message_text.lower()
@@ -119,6 +174,9 @@ async def on_ready():
     bot_status["last_update"] = datetime.now().isoformat()
     
     load_keywords()
+    
+    # 啟動 WebSocket 連接
+    asyncio.create_task(keyword_catcher.connect_websocket())
     
     if not monitor_website.is_running():
         monitor_website.start()
@@ -271,7 +329,7 @@ async def monitor_website():
                     matched_keywords = keyword_catcher.check_keywords(message_text, keywords)
                     
                     if matched_keywords:
-                        await send_notification(user_id, message_text, matched_keywords)
+                        await send_notification(user_id, message, matched_keywords)
         
         if len(previous_messages) > 1000:
             previous_messages = set(list(previous_messages)[-500:])
@@ -280,10 +338,22 @@ async def monitor_website():
         logger.error(f"監控任務發生錯誤: {e}")
         bot_status["status"] = f"錯誤: {e}"
 
-async def send_notification(user_id, message_text, matched_keywords):
+async def send_notification(user_id, message_data, matched_keywords):
     try:
         user = bot.get_user(user_id)
         if user:
+            # 處理訊息數據格式
+            if isinstance(message_data, dict):
+                message_text = message_data.get('text', '')
+                full_text = message_data.get('full_text', message_text)
+                username = message_data.get('username', '未知用戶')
+                channel = message_data.get('channel', '')
+            else:
+                message_text = str(message_data)
+                full_text = message_text
+                username = '未知用戶'
+                channel = ''
+            
             embed = discord.Embed(
                 title="🎯 關鍵字匹配通知",
                 description=f"在 [pal.tw](https://pal.tw/) 發現匹配的訊息!",
@@ -297,9 +367,23 @@ async def send_notification(user_id, message_text, matched_keywords):
                 inline=False
             )
             
+            if username and username != '未知用戶':
+                embed.add_field(
+                    name="發言者",
+                    value=f"`{username}`",
+                    inline=True
+                )
+            
+            if channel:
+                embed.add_field(
+                    name="頻道",
+                    value=f"`{channel}`",
+                    inline=True
+                )
+            
             embed.add_field(
-                name="完整訊息",
-                value=message_text[:1000] + "..." if len(message_text) > 1000 else message_text,
+                name="訊息內容",
+                value=f"```{message_text[:800]}```" + ("..." if len(message_text) > 800 else ""),
                 inline=False
             )
             
