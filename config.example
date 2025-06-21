@@ -1,0 +1,3 @@
+# Discord 機器人 Token
+# 請到 https://discord.com/developers/applications 創建應用程式並獲取 token
+DISCORD_TOKEN=your_discord_bot_token_here 

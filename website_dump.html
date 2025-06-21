@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <meta content="MapleStory Worlds Artale 公頻廣播 - 即時聊天室，最新遊戲訊息。" name="description"/>
+  <meta content="MapleStory, Artale, 公頻, 廣播, 即時聊天, 遊戲社群" name="keywords"/>
+  <meta content="hua_wl" name="author"/>
+  <meta content="MapleStory Worlds Artale 公頻廣播" property="og:title"/>
+  <meta content="即時接收 MapleStory Worlds Artale 社群廣播訊息，加入互動。" property="og:description"/>
+  <meta content="https://cdn.pal.tw/background.png" property="og:image"/>
+  <meta content="website" property="og:type"/>
+  <meta content="https://pal.tw" property="og:url"/>
+  <title>
+   MapleStory Worlds Artale 公頻廣播
+  </title>
+  <script async="" src="https://www.googletagmanager.com/gtag/js?id=G-X8NQBKBR8P">
+  </script>
+  <script>
+   window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X8NQBKBR8P');
+  </script>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <div class="chat-wrapper">
+   <div class="chat-header">
+    MapleStory Worlds Artale 公頻即時廣播
+   </div>
+   <div class="chat-box" id="chatBox">
+   </div>
+  </div>
+  <div id="chat-button">
+   <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 2h16a2 2 0 012 2v14a2 2 0 01-2 2H7.17L4 22.17V4a2 2 0 012-2zm0 2v14l3-3h11a.991.991 0 001-1V4a.991.991 0 00-1-1H6a.991.991 0 00-1 1z">
+    </path>
+   </svg>
+  </div>
+  <button class="notify-btn" id="notifyBtn" onclick="notifyKeyword()">
+   通知我
+  </button>
+  <button class="scroll-toggle-btn" id="scrollToggleBtn" onclick="toggleScroll()">
+   暫停捲動
+  </button>
+  <button class="bg-toggle-btn" onclick="toggleBackground()">
+   切換背景
+  </button>
+  <div class="bg-source">
+   圖片來源：
+   <a href="https://m.inven.co.kr/board/maple/2447/4071?iskin=maple" rel="nofollow" target="_blank">
+    Inven
+   </a>
+   系統支援：hua_wl
+  </div>
+  <script src="script.js">
+  </script>
+ </body>
+</html>
