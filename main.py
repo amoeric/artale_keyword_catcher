@@ -395,7 +395,7 @@ async def toggle_test_mode(ctx):
     await ctx.send(embed=embed)
     logger.info(f"測試模式已{status}")
 
-@bot.command(name='help')
+@bot.command(name='commands')
 async def help_command(ctx):
     embed = discord.Embed(
         title="🤖 Keyword Catcher 使用說明",
@@ -414,7 +414,7 @@ async def help_command(ctx):
     embed.add_field(
         name="⚙️ 設定",
         value="`@機器人 !set_channel` - 設定通知頻道\n"
-              "`@機器人 !help` - 顯示此說明訊息",
+              "`@機器人 !commands` - 顯示此說明訊息",
         inline=False
     )
     
@@ -444,7 +444,7 @@ async def help_command(ctx):
     embed.set_footer(text="如有問題請聯繫管理員")
     
     await ctx.send(embed=embed)
-    logger.info(f"用戶 {ctx.author.name} 查看了幫助訊息")
+    logger.info(f"用戶 {ctx.author.name} 查看了指令說明")
 
 @tasks.loop(seconds=30)
 async def monitor_website():
