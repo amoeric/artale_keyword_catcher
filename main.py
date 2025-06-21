@@ -345,6 +345,56 @@ async def toggle_test_mode(ctx):
     await ctx.send(embed=embed)
     logger.info(f"測試模式已{status}")
 
+@bot.command(name='help')
+async def help_command(ctx):
+    embed = discord.Embed(
+        title="🤖 Keyword Catcher 使用說明",
+        description="以下是所有可用的指令：",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(
+        name="📝 關鍵字管理",
+        value="`!add_keyword <關鍵字>` - 添加監控關鍵字\n"
+              "`!remove_keyword <關鍵字>` - 移除監控關鍵字\n"
+              "`!list_keywords` - 查看您的關鍵字列表",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="⚙️ 設定",
+        value="`!set_channel` - 設定通知頻道\n"
+              "`!help` - 顯示此說明訊息",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔧 測試功能",
+        value="`!test_fetch` - 測試網站抓取功能\n"
+              "`!toggle_test_mode` - 切換測試模式",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📋 使用說明",
+        value="• 機器人會監控 pal.tw 網站的聊天訊息\n"
+              "• 當出現您設定的關鍵字時會自動通知\n"
+              "• 通知優先發送私訊，如設定頻道則備援發送\n"
+              "• 每30秒檢查一次新訊息",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🌐 監控網站",
+        value="[MapleStory Worlds Artale 公頻廣播](https://pal.tw/)",
+        inline=False
+    )
+    
+    embed.set_footer(text="如有問題請聯繫管理員")
+    
+    await ctx.send(embed=embed)
+    logger.info(f"用戶 {ctx.author.name} 查看了幫助訊息")
+
 @tasks.loop(seconds=30)
 async def monitor_website():
     global previous_messages, notification_channel, bot_status
