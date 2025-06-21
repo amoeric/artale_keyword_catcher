@@ -671,77 +671,100 @@ async def monitor_website():
 
 async def send_notification(user_id, message_data, matched_keywords):
     try:
+        logger.info(f"🚀 開始發送通知: 用戶={user_id}, 關鍵字={matched_keywords}")
+        
         user = bot.get_user(user_id)
-        if user:
-            # 處理訊息數據格式
-            if isinstance(message_data, dict):
-                message_text = message_data.get('text', '')
-                full_text = message_data.get('full_text', message_text)
-                username = message_data.get('username', '未知用戶')
-                channel = message_data.get('channel', '')
-            else:
-                message_text = str(message_data)
-                full_text = message_text
-                username = '未知用戶'
-                channel = ''
+        if not user:
+            logger.error(f"❌ 找不到用戶: {user_id}")
+            return
             
-            embed = discord.Embed(
-                title="🎯 關鍵字匹配通知",
-                description=f"在 [pal.tw](https://pal.tw/) 發現匹配的訊息!",
-                color=discord.Color.gold(),
-                timestamp=datetime.now()
-            )
-            
+        logger.info(f"👤 找到用戶: {user.name}#{user.discriminator}")
+        
+        # 處理訊息數據格式
+        if isinstance(message_data, dict):
+            message_text = message_data.get('text', '')
+            full_text = message_data.get('full_text', message_text)
+            username = message_data.get('username', '未知用戶')
+            channel = message_data.get('channel', '')
+        else:
+            message_text = str(message_data)
+            full_text = message_text
+            username = '未知用戶'
+            channel = ''
+        
+        logger.info(f"📝 訊息內容: {message_text[:50]}...")
+        
+        embed = discord.Embed(
+            title="🎯 關鍵字匹配通知",
+            description=f"在 [pal.tw](https://pal.tw/) 發現匹配的訊息!",
+            color=discord.Color.gold(),
+            timestamp=datetime.now()
+        )
+        
+        embed.add_field(
+            name="匹配的關鍵字",
+            value=", ".join([f"**{kw}**" for kw in matched_keywords]),
+            inline=False
+        )
+        
+        if username and username != '未知用戶':
             embed.add_field(
-                name="匹配的關鍵字",
-                value=", ".join([f"**{kw}**" for kw in matched_keywords]),
-                inline=False
+                name="發言者",
+                value=f"`{username}`",
+                inline=True
             )
-            
-            if username and username != '未知用戶':
-                embed.add_field(
-                    name="發言者",
-                    value=f"`{username}`",
-                    inline=True
-                )
-            
-            if channel:
-                embed.add_field(
-                    name="頻道",
-                    value=f"`{channel}`",
-                    inline=True
-                )
-            
+        
+        if channel:
             embed.add_field(
-                name="訊息內容",
-                value=f"```{message_text[:800]}```" + ("..." if len(message_text) > 800 else ""),
-                inline=False
+                name="頻道",
+                value=f"`{channel}`",
+                inline=True
             )
-            
-            embed.set_footer(text="MapleStory Worlds Artale 公頻監控")
-            
-            # 優先發送到用戶設定的通知頻道
-            if user_id in user_notification_channels and user_notification_channels[user_id]:
-                try:
-                    channel_obj = bot.get_channel(user_notification_channels[user_id])
-                    if channel_obj:
-                        await channel_obj.send(f"{user.mention}", embed=embed)
-                        logger.info(f"已發送通知到用戶 {user.name} 的設定頻道: {matched_keywords}")
-                        return
-                except Exception as e:
-                    logger.error(f"發送到用戶設定頻道失敗: {e}")
-            
-            # 如果沒有設定個人頻道，嘗試發送私訊
+        
+        embed.add_field(
+            name="訊息內容",
+            value=f"```{message_text[:800]}```" + ("..." if len(message_text) > 800 else ""),
+            inline=False
+        )
+        
+        embed.set_footer(text="MapleStory Worlds Artale 公頻監控")
+        
+        # 優先發送到用戶設定的通知頻道
+        if user_id in user_notification_channels and user_notification_channels[user_id]:
             try:
-                await user.send(embed=embed)
-                logger.info(f"已發送私訊通知給用戶 {user.name}: {matched_keywords}")
-            except discord.Forbidden:
-                # 私訊失敗，發送到全域通知頻道
-                if notification_channel:
-                    await notification_channel.send(f"{user.mention}", embed=embed)
-                    logger.info(f"已發送通知到全域頻道: {matched_keywords}")
+                logger.info(f"🎯 嘗試發送到用戶設定的頻道: {user_notification_channels[user_id]}")
+                channel_obj = bot.get_channel(user_notification_channels[user_id])
+                if channel_obj:
+                    await channel_obj.send(f"{user.mention}", embed=embed)
+                    logger.info(f"✅ 已發送通知到用戶 {user.name} 的設定頻道: {matched_keywords}")
+                    return
                 else:
-                    logger.warning(f"無法發送通知給用戶 {user.name}，請設定通知頻道")
+                    logger.warning(f"⚠️ 找不到頻道: {user_notification_channels[user_id]}")
+            except Exception as e:
+                logger.error(f"❌ 發送到用戶設定頻道失敗: {e}")
+        
+        # 如果沒有設定個人頻道，嘗試發送私訊
+        try:
+            logger.info(f"💬 嘗試發送私訊給用戶 {user.name}")
+            await user.send(embed=embed)
+            logger.info(f"✅ 已發送私訊通知給用戶 {user.name}: {matched_keywords}")
+        except discord.Forbidden:
+            logger.warning(f"⚠️ 私訊被拒絕，嘗試發送到全域頻道")
+            # 私訊失敗，發送到全域通知頻道
+            if notification_channel:
+                await notification_channel.send(f"{user.mention}", embed=embed)
+                logger.info(f"✅ 已發送通知到全域頻道: {matched_keywords}")
+            else:
+                logger.warning(f"❌ 無法發送通知給用戶 {user.name}，請設定通知頻道")
+        except Exception as e:
+            logger.error(f"❌ 發送私訊時發生錯誤: {e}")
+            # 嘗試發送到全域頻道作為備援
+            if notification_channel:
+                try:
+                    await notification_channel.send(f"{user.mention}", embed=embed)
+                    logger.info(f"✅ 已發送通知到全域頻道（備援）: {matched_keywords}")
+                except Exception as e2:
+                    logger.error(f"❌ 發送到全域頻道也失敗: {e2}")
     
     except Exception as e:
         logger.error(f"發送通知時發生錯誤: {e}")
