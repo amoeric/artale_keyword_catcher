@@ -28,7 +28,16 @@ app = FastAPI(title="MapleStory Worlds Artale 關鍵字監控", description="Dis
 # Discord 機器人設置
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+
+# 自定義前綴函數 - 只在被提及時才處理指令
+def get_prefix(bot, message):
+    # 如果機器人被提及，則允許 ! 前綴
+    if bot.user and bot.user.mentioned_in(message):
+        return '!'
+    # 否則返回一個不可能的前綴，這樣就不會處理指令
+    return "NEVER_MATCH_THIS_PREFIX_12345"
+
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 
 # 全域變數
 monitored_keywords = {}
@@ -206,13 +215,21 @@ async def on_message(message):
     if not message.author.bot:
         logger.info(f"💬 收到訊息: {message.author.name}: {message.content}")
         
-        # 記錄所有提及機器人的訊息
+        # 檢查是否提及機器人且包含指令
         if bot.user.mentioned_in(message):
             logger.info(f"📢 收到提及: {message.author.name}: {message.content}")
-        
-        # 檢查是否為指令
-        if message.content.startswith('!'):
-            logger.info(f"🎯 檢測到指令: {message.content}")
+            
+            # 提取指令部分（移除 @ 機器人的部分）
+            content = message.content
+            # 移除所有提及（包括用戶和角色）
+            import re
+            content = re.sub(r'<@[!&]?\d+>', '', content).strip()
+            
+            # 檢查是否為指令
+            if content.startswith('!'):
+                logger.info(f"🎯 檢測到提及指令: {content}")
+                # 創建一個新的訊息對象來處理指令
+                message.content = content
     
     # 處理指令
     await bot.process_commands(message)
@@ -355,29 +372,30 @@ async def help_command(ctx):
     
     embed.add_field(
         name="📝 關鍵字管理",
-        value="`!add_keyword <關鍵字>` - 添加監控關鍵字\n"
-              "`!remove_keyword <關鍵字>` - 移除監控關鍵字\n"
-              "`!list_keywords` - 查看您的關鍵字列表",
+        value="`@機器人 !add_keyword <關鍵字>` - 添加監控關鍵字\n"
+              "`@機器人 !remove_keyword <關鍵字>` - 移除監控關鍵字\n"
+              "`@機器人 !list_keywords` - 查看您的關鍵字列表",
         inline=False
     )
     
     embed.add_field(
         name="⚙️ 設定",
-        value="`!set_channel` - 設定通知頻道\n"
-              "`!help` - 顯示此說明訊息",
+        value="`@機器人 !set_channel` - 設定通知頻道\n"
+              "`@機器人 !help` - 顯示此說明訊息",
         inline=False
     )
     
     embed.add_field(
         name="🔧 測試功能",
-        value="`!test_fetch` - 測試網站抓取功能\n"
-              "`!toggle_test_mode` - 切換測試模式",
+        value="`@機器人 !test_fetch` - 測試網站抓取功能\n"
+              "`@機器人 !toggle_test_mode` - 切換測試模式",
         inline=False
     )
     
     embed.add_field(
         name="📋 使用說明",
-        value="• 機器人會監控 pal.tw 網站的聊天訊息\n"
+        value="• **必須先 @ 機器人才能使用指令**\n"
+              "• 機器人會監控 pal.tw 網站的聊天訊息\n"
               "• 當出現您設定的關鍵字時會自動通知\n"
               "• 通知優先發送私訊，如設定頻道則備援發送\n"
               "• 每30秒檢查一次新訊息",
