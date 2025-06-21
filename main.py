@@ -51,36 +51,47 @@ class KeywordCatcher:
     
     async def connect_websocket(self):
         """連接到 WebSocket 並監聽訊息"""
-        try:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            async with websockets.connect(self.ws_url, ssl=ssl_context) as websocket:
-                self.ws_connected = True
-                logger.info("WebSocket 連接成功！")
+        while True:  # 無限重連機制
+            try:
+                logger.info(f"🔌 正在連接 WebSocket: {self.ws_url}")
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
                 
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        if isinstance(data, list):
-                            for msg in data:
-                                self.process_message(msg)
-                        else:
-                            self.process_message(data)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"JSON 解析錯誤: {e}")
-                    except Exception as e:
-                        logger.error(f"處理 WebSocket 訊息時發生錯誤: {e}")
-                        
-        except Exception as e:
-            logger.error(f"WebSocket 連接錯誤: {e}")
-            self.ws_connected = False
+                async with websockets.connect(self.ws_url, ssl=ssl_context) as websocket:
+                    self.ws_connected = True
+                    logger.info("✅ WebSocket 連接成功！開始監聽訊息...")
+                    
+                    async for message in websocket:
+                        try:
+                            data = json.loads(message)
+                            logger.info(f"📦 收到原始訊息: {len(data) if isinstance(data, list) else 1} 條")
+                            
+                            if isinstance(data, list):
+                                logger.info(f"📋 處理訊息批次: {len(data)} 條訊息")
+                                for msg in data:
+                                    self.process_message(msg)
+                            else:
+                                logger.info("📋 處理單條訊息")
+                                self.process_message(data)
+                                
+                        except json.JSONDecodeError as e:
+                            logger.error(f"❌ JSON 解析錯誤: {e}")
+                            logger.error(f"原始訊息: {message}")
+                        except Exception as e:
+                            logger.error(f"❌ 處理 WebSocket 訊息時發生錯誤: {e}")
+                            
+            except Exception as e:
+                logger.error(f"❌ WebSocket 連接錯誤: {e}")
+                self.ws_connected = False
+                logger.info("⏳ 5秒後重新連接...")
+                await asyncio.sleep(5)
     
     def process_message(self, msg):
         """處理單條訊息"""
         try:
             if not isinstance(msg, dict):
+                logger.warning(f"收到非字典格式訊息: {type(msg)} - {msg}")
                 return
                 
             channel = msg.get('channel', '')
@@ -105,7 +116,14 @@ class KeywordCatcher:
                 if len(self.latest_messages) > 100:
                     self.latest_messages.pop(0)
                 
-                logger.debug(f"收到訊息: {username}: {text}")
+                # 詳細日誌記錄每條訊息
+                logger.info(f"📨 WebSocket 訊息: {channel_display} {username}: {text}")
+                
+                # 如果訊息包含常見關鍵字，特別標記
+                if any(keyword in text.lower() for keyword in ['雪', '楓葉', '收', '賣', '組隊']):
+                    logger.info(f"🎯 包含關鍵字的訊息: {full_message}")
+            else:
+                logger.debug(f"收到空訊息: {msg}")
                 
         except Exception as e:
             logger.error(f"處理訊息時發生錯誤: {e}")
@@ -168,7 +186,7 @@ keyword_catcher = KeywordCatcher()
 async def on_ready():
     global bot_status
     print(f'{bot.user} 已經上線!')
-    logger.info(f'Bot {bot.user} is ready!')
+    logger.info(f'🤖 Bot {bot.user} is ready!')
     
     bot_status["status"] = "運行中"
     bot_status["last_update"] = datetime.now().isoformat()
@@ -180,14 +198,33 @@ async def on_ready():
     
     if not monitor_website.is_running():
         monitor_website.start()
-        logger.info("網站監控任務已啟動")
+        logger.info("📊 網站監控任務已啟動")
+
+@bot.event
+async def on_message(message):
+    # 記錄所有非機器人訊息
+    if not message.author.bot:
+        logger.info(f"💬 收到訊息: {message.author.name}: {message.content}")
+        
+        # 記錄所有提及機器人的訊息
+        if bot.user.mentioned_in(message):
+            logger.info(f"📢 收到提及: {message.author.name}: {message.content}")
+        
+        # 檢查是否為指令
+        if message.content.startswith('!'):
+            logger.info(f"🎯 檢測到指令: {message.content}")
+    
+    # 處理指令
+    await bot.process_commands(message)
 
 @bot.command(name='add_keyword')
 async def add_keyword(ctx, *, keyword):
+    logger.info(f"🎯 收到添加關鍵字指令: 用戶={ctx.author.name}({ctx.author.id}), 關鍵字={keyword}")
     user_id = ctx.author.id
     
     if user_id not in monitored_keywords:
         monitored_keywords[user_id] = []
+        logger.info(f"👤 為新用戶 {ctx.author.name} 創建關鍵字列表")
     
     if keyword not in monitored_keywords[user_id]:
         monitored_keywords[user_id].append(keyword)
@@ -200,7 +237,7 @@ async def add_keyword(ctx, *, keyword):
             color=discord.Color.green()
         )
         await ctx.send(embed=embed)
-        logger.info(f"用戶 {ctx.author.name} 添加關鍵字: {keyword}")
+        logger.info(f"✅ 用戶 {ctx.author.name} 成功添加關鍵字: {keyword}")
     else:
         embed = discord.Embed(
             title="⚠️ 關鍵字已存在",
@@ -208,6 +245,7 @@ async def add_keyword(ctx, *, keyword):
             color=discord.Color.orange()
         )
         await ctx.send(embed=embed)
+        logger.info(f"⚠️ 用戶 {ctx.author.name} 嘗試添加已存在的關鍵字: {keyword}")
 
 @bot.command(name='remove_keyword')
 async def remove_keyword(ctx, *, keyword):
