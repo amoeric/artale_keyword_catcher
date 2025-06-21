@@ -149,20 +149,37 @@ class KeywordCatcher:
             message_text = message_data['text']
             message_hash = hashlib.md5(message_text.encode()).hexdigest()
             
+            # 詳細調試日誌
+            logger.info(f"🔍 檢查訊息: {message_text[:50]}...")
+            logger.info(f"📊 當前監控用戶數: {len(monitored_keywords)}")
+            
             # 避免重複通知
             if message_hash in previous_messages:
+                logger.debug(f"⏭️ 跳過重複訊息: {message_hash[:8]}")
                 return
             
             previous_messages.add(message_hash)
             
             # 檢查每個用戶的關鍵字
+            notifications_sent = 0
             for user_id, keywords in monitored_keywords.items():
                 if keywords:
+                    logger.info(f"👤 檢查用戶 {user_id} 的關鍵字: {keywords}")
                     matched_keywords = self.check_keywords(message_text, keywords)
                     
                     if matched_keywords:
                         logger.info(f"🔔 為用戶 {user_id} 找到匹配關鍵字: {matched_keywords}")
                         await send_notification(user_id, message_data, matched_keywords)
+                        notifications_sent += 1
+                    else:
+                        logger.debug(f"❌ 用戶 {user_id} 無匹配關鍵字")
+                else:
+                    logger.debug(f"⚠️ 用戶 {user_id} 沒有設定關鍵字")
+            
+            if notifications_sent == 0:
+                logger.info(f"📝 訊息 '{message_text[:30]}...' 沒有匹配任何用戶關鍵字")
+            else:
+                logger.info(f"📤 發送了 {notifications_sent} 個通知")
             
             # 清理舊的訊息哈希
             if len(previous_messages) > 1000:
@@ -170,6 +187,8 @@ class KeywordCatcher:
                 
         except Exception as e:
             logger.error(f"檢查用戶關鍵字時發生錯誤: {e}")
+            import traceback
+            logger.error(f"詳細錯誤: {traceback.format_exc()}")
     
     def fetch_messages(self):
         """獲取最新訊息（用於定時檢查）"""
@@ -415,6 +434,72 @@ async def test_fetch(ctx):
     
     await ctx.send(embed=embed)
 
+@bot.command(name='debug_status')
+async def debug_status(ctx):
+    """顯示機器人的詳細狀態信息"""
+    embed = discord.Embed(
+        title="🔧 機器人調試狀態",
+        color=discord.Color.blue()
+    )
+    
+    # WebSocket 狀態
+    ws_status = "✅ 已連接" if keyword_catcher.ws_connected else "❌ 未連接"
+    embed.add_field(
+        name="WebSocket 狀態",
+        value=ws_status,
+        inline=True
+    )
+    
+    # 用戶關鍵字數據
+    embed.add_field(
+        name="監控用戶數",
+        value=str(len(monitored_keywords)),
+        inline=True
+    )
+    
+    # 總關鍵字數
+    total_keywords = sum(len(keywords) for keywords in monitored_keywords.values())
+    embed.add_field(
+        name="總關鍵字數",
+        value=str(total_keywords),
+        inline=True
+    )
+    
+    # 最新訊息數
+    embed.add_field(
+        name="緩存訊息數",
+        value=str(len(keyword_catcher.latest_messages)),
+        inline=True
+    )
+    
+    # 當前用戶的設定
+    user_id = ctx.author.id
+    user_keywords = monitored_keywords.get(user_id, [])
+    user_channel = user_notification_channels.get(user_id, None)
+    
+    embed.add_field(
+        name="您的關鍵字",
+        value=", ".join(user_keywords) if user_keywords else "無",
+        inline=False
+    )
+    
+    if user_channel:
+        channel_obj = bot.get_channel(user_channel)
+        channel_name = channel_obj.name if channel_obj else "頻道已失效"
+        embed.add_field(
+            name="您的通知頻道",
+            value=f"#{channel_name}",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="您的通知頻道",
+            value="未設定",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name='test_notify')
 async def test_notify(ctx):
     """測試關鍵字匹配和通知功能"""
@@ -527,6 +612,7 @@ async def help_command(ctx):
         name="🔧 測試功能",
         value="`@機器人 !test_fetch` - 測試網站抓取功能\n"
               "`@機器人 !test_notify` - 測試關鍵字匹配和通知\n"
+              "`@機器人 !debug_status` - 顯示機器人調試狀態\n"
               "`@機器人 !toggle_test_mode` - 切換測試模式",
         inline=False
     )
