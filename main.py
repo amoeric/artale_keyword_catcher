@@ -41,8 +41,9 @@ bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 
 # 全域變數
 monitored_keywords = {}
+user_notification_channels = {}  # 儲存每個用戶的通知頻道
 previous_messages = set()
-notification_channel = None
+notification_channel = None  # 全域通知頻道（備用）
 last_warning_time = None
 bot_status = {"status": "停止", "last_update": None, "users_count": 0, "keywords_count": 0}
 
@@ -234,6 +235,7 @@ async def on_ready():
     bot_status["last_update"] = datetime.now().isoformat()
     
     load_keywords()
+    load_user_settings()
     
     # 啟動 WebSocket 連接
     asyncio.create_task(keyword_catcher.connect_websocket())
@@ -343,16 +345,47 @@ async def list_keywords(ctx):
 
 @bot.command(name='set_channel')
 async def set_notification_channel(ctx):
-    global notification_channel
-    notification_channel = ctx.channel
+    global user_notification_channels
+    user_id = ctx.author.id
+    user_notification_channels[user_id] = ctx.channel.id
+    
+    # 同時儲存到文件
+    save_user_settings()
     
     embed = discord.Embed(
-        title="✅ 通知頻道已設定",
-        description=f"關鍵字匹配通知將發送到 {ctx.channel.mention}",
+        title="✅ 個人通知頻道已設定",
+        description=f"您的關鍵字匹配通知將發送到 {ctx.channel.mention}",
         color=discord.Color.green()
     )
     await ctx.send(embed=embed)
-    logger.info(f"通知頻道已設定為: {ctx.channel.name}")
+    logger.info(f"用戶 {ctx.author.name} 設定通知頻道為: {ctx.channel.name}")
+
+@bot.command(name='channel_info')
+async def channel_info(ctx):
+    user_id = ctx.author.id
+    
+    if user_id in user_notification_channels and user_notification_channels[user_id]:
+        channel_obj = bot.get_channel(user_notification_channels[user_id])
+        if channel_obj:
+            embed = discord.Embed(
+                title="📍 您的通知頻道設定",
+                description=f"通知將發送到: {channel_obj.mention}",
+                color=discord.Color.blue()
+            )
+        else:
+            embed = discord.Embed(
+                title="⚠️ 通知頻道無效",
+                description="您設定的通知頻道已失效，請重新設定",
+                color=discord.Color.orange()
+            )
+    else:
+        embed = discord.Embed(
+            title="📍 您的通知頻道設定",
+            description="您還沒有設定通知頻道，將嘗試發送私訊",
+            color=discord.Color.blue()
+        )
+    
+    await ctx.send(embed=embed)
 
 @bot.command(name='test_fetch')
 async def test_fetch(ctx):
@@ -413,7 +446,8 @@ async def help_command(ctx):
     
     embed.add_field(
         name="⚙️ 設定",
-        value="`@機器人 !set_channel` - 設定通知頻道\n"
+        value="`@機器人 !set_channel` - 設定個人通知頻道\n"
+              "`@機器人 !channel_info` - 查看通知頻道設定\n"
               "`@機器人 !commands` - 顯示此說明訊息",
         inline=False
     )
@@ -528,13 +562,28 @@ async def send_notification(user_id, message_data, matched_keywords):
             
             embed.set_footer(text="MapleStory Worlds Artale 公頻監控")
             
+            # 優先發送到用戶設定的通知頻道
+            if user_id in user_notification_channels and user_notification_channels[user_id]:
+                try:
+                    channel_obj = bot.get_channel(user_notification_channels[user_id])
+                    if channel_obj:
+                        await channel_obj.send(f"{user.mention}", embed=embed)
+                        logger.info(f"已發送通知到用戶 {user.name} 的設定頻道: {matched_keywords}")
+                        return
+                except Exception as e:
+                    logger.error(f"發送到用戶設定頻道失敗: {e}")
+            
+            # 如果沒有設定個人頻道，嘗試發送私訊
             try:
                 await user.send(embed=embed)
-                logger.info(f"已發送通知給用戶 {user.name}: {matched_keywords}")
+                logger.info(f"已發送私訊通知給用戶 {user.name}: {matched_keywords}")
             except discord.Forbidden:
+                # 私訊失敗，發送到全域通知頻道
                 if notification_channel:
                     await notification_channel.send(f"{user.mention}", embed=embed)
-                    logger.info(f"已發送通知到頻道: {matched_keywords}")
+                    logger.info(f"已發送通知到全域頻道: {matched_keywords}")
+                else:
+                    logger.warning(f"無法發送通知給用戶 {user.name}，請設定通知頻道")
     
     except Exception as e:
         logger.error(f"發送通知時發生錯誤: {e}")
@@ -545,6 +594,13 @@ def save_keywords():
             json.dump(monitored_keywords, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"儲存關鍵字時發生錯誤: {e}")
+
+def save_user_settings():
+    try:
+        with open('user_settings.json', 'w', encoding='utf-8') as f:
+            json.dump(user_notification_channels, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"儲存用戶設定時發生錯誤: {e}")
 
 def load_keywords():
     global monitored_keywords
@@ -558,6 +614,18 @@ def load_keywords():
     except Exception as e:
         logger.error(f"載入關鍵字時發生錯誤: {e}")
         monitored_keywords = {}
+
+def load_user_settings():
+    global user_notification_channels
+    try:
+        if os.path.exists('user_settings.json'):
+            with open('user_settings.json', 'r', encoding='utf-8') as f:
+                loaded_data = json.load(f)
+                user_notification_channels = {int(k): v for k, v in loaded_data.items()}
+                logger.info(f"已載入 {len(user_notification_channels)} 個用戶的通知頻道設定")
+    except Exception as e:
+        logger.error(f"載入用戶設定時發生錯誤: {e}")
+        user_notification_channels = {}
 
 def update_bot_status():
     global bot_status
