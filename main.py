@@ -131,11 +131,44 @@ class KeywordCatcher:
                 # 如果訊息包含常見關鍵字，特別標記
                 if any(keyword in text.lower() for keyword in ['雪', '楓葉', '收', '賣', '組隊']):
                     logger.info(f"🎯 包含關鍵字的訊息: {full_message}")
+                
+                # 立即檢查用戶關鍵字並發送通知
+                asyncio.create_task(self.check_user_keywords_and_notify(message_data))
             else:
                 logger.debug(f"收到空訊息: {msg}")
                 
         except Exception as e:
             logger.error(f"處理訊息時發生錯誤: {e}")
+    
+    async def check_user_keywords_and_notify(self, message_data):
+        """檢查用戶關鍵字並發送通知"""
+        try:
+            global monitored_keywords, previous_messages
+            
+            message_text = message_data['text']
+            message_hash = hashlib.md5(message_text.encode()).hexdigest()
+            
+            # 避免重複通知
+            if message_hash in previous_messages:
+                return
+            
+            previous_messages.add(message_hash)
+            
+            # 檢查每個用戶的關鍵字
+            for user_id, keywords in monitored_keywords.items():
+                if keywords:
+                    matched_keywords = self.check_keywords(message_text, keywords)
+                    
+                    if matched_keywords:
+                        logger.info(f"🔔 為用戶 {user_id} 找到匹配關鍵字: {matched_keywords}")
+                        await send_notification(user_id, message_data, matched_keywords)
+            
+            # 清理舊的訊息哈希
+            if len(previous_messages) > 1000:
+                previous_messages = set(list(previous_messages)[-500:])
+                
+        except Exception as e:
+            logger.error(f"檢查用戶關鍵字時發生錯誤: {e}")
     
     def fetch_messages(self):
         """獲取最新訊息（用於定時檢查）"""
